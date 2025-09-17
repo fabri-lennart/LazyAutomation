@@ -1,0 +1,67 @@
+id: Api_calls
+namespace: fabri.workflows
+
+inputs:
+  - id: endpoint
+    type: STRING
+    defaults: "your endpoint here"
+  
+  - id: password
+    type: STRING
+    defaults: "your password here"
+
+tasks:
+  - id: api_request
+    type: io.kestra.plugin.scripts.python.Script
+    beforeCommands: 
+      - pip install requests Kestra
+    script: |
+      import json
+      import requests as rq
+      # Fixed string concatenation
+      request = rq.get("{{inputs.endpoint}}" + "{{inputs.password}}")
+      print(request.status_code)
+
+      with open("finance.json", "w") as f:
+          json.dump(request.json(), f)
+    outputFiles:
+      - finance.json
+
+  - id: process_data
+    type: io.kestra.plugin.scripts.python.Script
+    beforeCommands: 
+      - pip install pandas  # For advanced data manipulation
+    script: |
+      import json
+      from collections import defaultdict
+      from datetime import datetime  # This import was missing
+
+      # 1. Load JSON from previous task
+      with open("{{outputs.api_request.outputFiles['finance.json']}}", "r") as f:
+          data = json.load(f)
+
+      # 2. Process data to extract topics and relevances
+      topics_relevance = defaultdict(list)
+      
+      for article in data["feed"]:
+          for topic in article["topics"]:
+              topic_name = topic["topic"]
+              relevance = topic["relevance_score"]
+              topics_relevance[topic_name].append(relevance)
+      
+      # Convert defaultdict to normal dict for JSON serialization
+      result = {
+          "topics_with_relevance": dict(topics_relevance),
+          "metadata": {
+              "total_articles_processed": len(data["feed"]),
+              "unique_topics_count": len(topics_relevance),
+              "processing_date": datetime.now().isoformat()
+          }
+      }
+
+      # 3. Save results to JSON file
+      with open("topics_and_relevance.json", "w") as out_file:
+          json.dump(result, out_file, indent=2)
+
+    outputFiles:
+      - topics_and_relevance.json

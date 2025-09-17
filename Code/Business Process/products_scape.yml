@@ -1,0 +1,59 @@
+id: products_scrape
+namespace: fabri.team
+
+tasks:
+  - id: Request
+    type: io.kestra.plugin.scripts.python.Script
+    beforeCommands:
+      - pip install requests beautifulsoup4 Kestra
+    script: |
+      import requests
+      from bs4 import BeautifulSoup
+      from kestra import Kestra
+
+      url = "https://webscraper.io/test-sites/e-commerce/allinone"
+      response = requests.get(url)
+      soup = BeautifulSoup(response.text, "html.parser")
+
+      products_html = soup.select("div.col-md-4.col-xl-4.col-lg-4")
+
+      products = []
+      for product in products_html:
+          full_name = product.select_one(".title")["title"]
+          price = product.select_one(".price span").get_text(strip=True)
+          products.append({"Product": full_name, "Price": price})
+          print(f"{full_name} - {price}")
+
+      print(products)
+      Kestra.outputs({'products': products})
+
+  - id: transform
+    type: io.kestra.plugin.scripts.python.Script
+    outputFiles:
+      - "*.csv"
+    beforeCommands:
+      - pip install Kestra
+    script: |
+      import csv
+      from kestra import Kestra
+
+      # Corrected access using vars (as you mentioned)
+      data = {{outputs.Request.vars}}
+      products = data['products']  # Extract product list
+
+      # Debug: Check data structure
+      print("Type of data:", type(data))
+      print("Keys in data:", data.keys())
+      print("First product:", products[0])
+
+      # Generate CSV
+      with open('products.csv', 'w', newline='', encoding='utf-8') as f:
+          writer = csv.DictWriter(f, fieldnames=['Product', 'Price'])
+          writer.writeheader()
+          for product in products:  # Iterate over list
+              writer.writerow({
+                  'Product': product['Product'],
+                  'Price': product['Price']
+              })
+
+      print("CSV generated successfully!")
