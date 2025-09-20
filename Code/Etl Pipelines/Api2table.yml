@@ -1,0 +1,118 @@
+id: Api2table
+namespace: etl_pipelines
+
+tasks:
+  - id: api
+    type: io.kestra.plugin.core.http.Request
+    uri: https://dummyjson.com/products
+
+  - id: python
+    type: io.kestra.plugin.scripts.python.Script
+    beforeCommands:
+      - pip install jsonschema
+    script: |
+      import json
+      from jsonschema import validate, exceptions
+
+      # El esquema JSON para la validación
+      schema = {
+        "title": "ProductList",
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id", "title", "description", "category", "price", "discountPercentage", "rating",
+                "stock", "tags", "sku", "weight", "dimensions", "warrantyInformation",
+                "shippingInformation", "availabilityStatus", "reviews", "returnPolicy",
+                "minimumOrderQuantity", "meta", "images", "thumbnail"
+              ],
+              "properties": {
+                "id": {"type": "integer"},
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "category": {"type": "string"},
+                "price": {"type": "number"},
+                "discountPercentage": {"type": "number"},
+                "rating": {"type": "number"},
+                "stock": {"type": "integer"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "brand": {"type": "string"},
+                "sku": {"type": "string"},
+                "weight": {"type": "integer"},
+                "dimensions": {
+                  "type": "object",
+                  "properties": {
+                    "width": {"type": "number"},
+                    "height": {"type": "number"},
+                    "depth": {"type": "number"}
+                  }
+                },
+                "warrantyInformation": {"type": "string"},
+                "shippingInformation": {"type": "string"},
+                "availabilityStatus": {"type": "string", "enum": ["In Stock", "Low Stock"]},
+                "reviews": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rating": {"type": "integer"},
+                      "comment": {"type": "string"},
+                      "date": {"type": "string"},
+                      "reviewerName": {"type": "string"},
+                      "reviewerEmail": {"type": "string"}
+                    }
+                  }
+                },
+                "returnPolicy": {"type": "string"},
+                "minimumOrderQuantity": {"type": "integer"},
+                "meta": {
+                  "type": "object",
+                  "properties": {
+                    "createdAt": {"type": "string"},
+                    "updatedAt": {"type": "string"},
+                    "barcode": {"type": "string"},
+                    "qrCode": {"type": "string"}
+                  }
+                },
+                "images": {"type": "array", "items": {"type": "string"}},
+                "thumbnail": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+
+      # Obtiene los datos del paso anterior y los carga
+      data = json.loads('''{{ outputs.api.body | trim }}''')
+
+      try:
+        validate(instance=data, schema=schema)
+        print("El JSON es válido según el esquema. 🎉")
+      except exceptions.ValidationError as err:
+        print("Error de validación: 🧐")
+        print(err)
+
+      # Escribe el archivo de salida
+      with open("products.json", "w") as f:
+        json.dump(data, f, indent=2)
+
+    # **¡Aquí es donde se declara la salida!**
+    outputFiles:
+      - products.json
+
+  - id: sql_query   
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    inputFiles:
+      in.json: "{{ outputs.python.outputFiles['products.json'] }}"
+    sql: |
+      SELECT
+        p.brand,
+        round(avg(p.price), 2) as avg_price
+      FROM read_json_auto('{{ workingDir }}/in.json', format='auto'),
+      UNNEST(products) AS t(p)
+      GROUP BY p.brand
+      ORDER BY avg_price DESC;
+    fetchType: STORE
