@@ -1,0 +1,45 @@
+id: github-test-runner
+namespace: company.team
+
+inputs:
+  - id: repository_link
+    type: STRING
+    defaults: "https://github.com/fabri-lennart/test-automation-workflow.git"
+  
+  - id: acces_tokens
+    type: STRING
+    defaults: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJpFGc8X7k8R9QZ1bM8nTqPwLxV6sDhYyBtKjHmN9a8p user@ci-server"
+    
+  - id: branch_name
+    type: STRING
+    defaults: "main"
+
+tasks:
+  - id: testing
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: "{{inputs.repository_link}}"
+        branch: "{{inputs.branch_name}}"
+
+      - id: debug_directory
+        type: io.kestra.plugin.scripts.shell.Commands
+        commands:
+          - pwd
+          - ls -la
+          - find . -name "*.py"
+
+      - id: run_tests
+        type: io.kestra.plugin.scripts.python.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: python:3.9-slim
+        commands:
+          - pip install pytest
+          - python -m pytest tests/ -v
+
+triggers:
+      - id: schedule
+        type: io.kestra.plugin.core.trigger.Schedule
+        cron: "@hourly"
